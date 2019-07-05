@@ -76,8 +76,6 @@ int relayNodeID = 0x0; // Is the recepient address
 
 #define ALARM_INTERUPT_PIN_ON 0  // GPIO value to write to turn on attached relay
 #define ALARM_INTERUPT_PIN_OFF 1 // GPIO value to write to turn off attached relay
-#define ALARM_INTERUPT_PIN1_ON 0  // GPIO value to write to turn on attached relay
-#define ALARM_INTERUPT_PIN1_OFF 1 // GPIO value to write to turn off attached relay
 
 static void print_hex_buffer(uint8_t* data, size_t sz);
 static bool get_atsha204a_serial(uint8_t* data);
@@ -90,7 +88,7 @@ atsha204Class sha204(sha204Pin);
 #define SPIFLASH_BLOCKERASE_32K   0xD8
 #define SPIFLASH_CHIPERASE        0x60
 
-#define SKETCH_NAME "Door\Window Sensor "
+#define SKETCH_NAME "Gate\Flood Sensor "
 #define SKETCH_MAJOR_VER "1"
 #define SKETCH_MINOR_VER "0"
 
@@ -105,6 +103,7 @@ int oldBatteryPcnt = 0;
 
 MyMessage msgSensorState(1, V_LIGHT);
 MyMessage msgAlarmState(2, V_LIGHT);
+MyMessage msgBatteryLevel(222, V_LIGHT);
 
 char SHA204serial[19];  //SHA204_RSP_SIZE_MAX*2
   
@@ -271,7 +270,8 @@ void presentation() {
   // If S_LIGHT is used, remember to update variable type you send in. See "msg" above.
 
   present(1, S_LIGHT);
-  present(2, S_LIGHT);
+  present(2, S_LIGHT); 
+  present(222, S_LIGHT);
 }
 
 void setup() {
@@ -352,6 +352,19 @@ void loop(){
    */
   int sensorValue = readVcc();
   int batteryPcnt = 100 * (sensorValue - 2400) / 600;
+
+  
+  batteryPcnt = batteryPcnt > 0 ? batteryPcnt:0; // Cut down negative values. Just in case the battery goes below 4V and the node still working. 
+  batteryPcnt = batteryPcnt < 100 ? batteryPcnt:100; // Cut down more than "100%" values. In case of ADC fluctuations. 
+
+  if (oldBatteryPcnt != batteryPcnt ) {
+    sprintf(msg,"%i;%s",batteryPcnt,SHA204serial);
+    //sendBatteryLevel(msg);
+    msgSensorState.setDestination(0);
+    send(msgBatteryLevel.set(msg), true);
+    wait(100);  
+    oldBatteryPcnt = batteryPcnt;
+  }
 
   if (millis() > 6000){
   batteryPcnt > 10 ? blinkGreenSensorLed(): blinkRedSensorLed(); 
