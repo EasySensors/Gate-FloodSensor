@@ -31,7 +31,7 @@
 #define MY_DEBUG_VERBOSE_RFM69
 
 // The switch Node ID
-#define MY_NODE_ID 0x43
+//#define MY_NODE_ID 0x43
 
 
 /* Each Button status (On or Off) can be sent to a different Relay or Actuator NodeId address.  
@@ -74,8 +74,8 @@ int relayNodeID = 0x0; // Is the recepient address
 #include <MySensors.h>
 
 
-#define ALARM_INTERUPT_PIN0_ON 0  // GPIO value to write to turn on attached relay
-#define ALARM_INTERUPT_PIN0_OFF 1 // GPIO value to write to turn off attached relay
+#define ALARM_INTERUPT_PIN_ON 0  // GPIO value to write to turn on attached relay
+#define ALARM_INTERUPT_PIN_OFF 1 // GPIO value to write to turn off attached relay
 #define ALARM_INTERUPT_PIN1_ON 0  // GPIO value to write to turn on attached relay
 #define ALARM_INTERUPT_PIN1_OFF 1 // GPIO value to write to turn off attached relay
 
@@ -84,7 +84,7 @@ static bool get_atsha204a_serial(uint8_t* data);
 //uint8_t buffer[SIZE_SIGNING_SOFT_HMAC_KEY + SIZE_RF_ENCRYPTION_AES_KEY + SIZE_SIGNING_SOFT_SERIAL];
 uint8_t buffer[SHA204_RSP_SIZE_MAX];
 const int sha204Pin = MY_SIGNING_ATSHA204_PIN; //!< The IO pin to use for ATSHA204A
-static uint8_t rx_buffer[SHA204_RSP_SIZE_MAX];
+static uint8_t rx_buffer[18]; //SHA204_RSP_SIZE_MAX
 atsha204Class sha204(sha204Pin);
 
 #define SPIFLASH_BLOCKERASE_32K   0xD8
@@ -95,8 +95,7 @@ atsha204Class sha204(sha204Pin);
 #define SKETCH_MINOR_VER "0"
 
 #define SENSOR_INTERUPT_PIN 3
-#define ALARM_INTERUPT_PIN0 A0
-#define ALARM_INTERUPT_PIN1 A1
+#define ALARM_INTERUPT_PIN A1
 #define GREEN_LED 5
 #define RED_LED 6
 
@@ -105,16 +104,16 @@ int oldBatteryPcnt = 0;
 
 
 MyMessage msgSensorState(1, V_LIGHT);
-MyMessage msgAlarm0State(2, V_LIGHT);
-MyMessage msgAlarm1State(3, V_LIGHT);
+MyMessage msgAlarmState(2, V_LIGHT);
 
-char SHA204serial[18];  //SHA204_RSP_SIZE_MAX*2
+char SHA204serial[19];  //SHA204_RSP_SIZE_MAX*2
   
 void stringFromHexBuffer(uint8_t* data, size_t sz)
 { int j = 0;  uint8_t h=0;
   for (size_t i=0; i<sz; i++) {
     sprintf(&SHA204serial[i*2],"%02x",data[i]);
   }
+  SHA204serial[18] = '\0';
 }
 
 static bool get_atsha204a_serial()
@@ -135,7 +134,7 @@ static bool get_atsha204a_serial()
 void AlarmIntEnable() 
 {
   // Enable pin change for A0 to A1 
-  PCMSK1 |= bit (PCINT8);  
+  //PCMSK1 |= bit (PCINT8);  
   PCMSK1 |= bit (PCINT9);  
   PCIFR  |= bit (PCIF1);   // clear any outstanding interrupts
   PCICR  |= bit (PCIE1);   // enable pin change interrupts for A0 to A1 
@@ -153,14 +152,6 @@ volatile uint8_t flagPcint = 0;
 ISR (PCINT1_vect) 
 {
   flagPcint = 1; 
-  
-  //if((PIND & (1 << PIND6)) == 0x40 ) {    
-    //irqPir = true;  
-  //}
-  //if((PIND & (1 << PIND7)) == 0x80 ) {  
-    //irqPir = true;  
-  //}      
-  //AlarmIntDisable();  
 } 
 
 //-----------------------------------
@@ -225,10 +216,8 @@ void before()
   Serial.print("SHA204serial: "); Serial.println(SHA204serial);
 
   // Setup the pins
-  pinMode(ALARM_INTERUPT_PIN0, INPUT);
-  pinMode(ALARM_INTERUPT_PIN1, INPUT);
-  digitalWrite(ALARM_INTERUPT_PIN0, HIGH);
-  digitalWrite(ALARM_INTERUPT_PIN1, HIGH);
+  pinMode(ALARM_INTERUPT_PIN, INPUT);
+  digitalWrite(ALARM_INTERUPT_PIN, HIGH);
 
   AlarmIntEnable();
 
@@ -241,8 +230,6 @@ void before()
     hwWriteConfig(EEPROM_NODE_ID_ADDRESS, 255);
     Serial.println("NODE ID IS CLEARED");
     wait(1000);
-    digitalWrite(GREEN_LED, LOW);
-    digitalWrite(RED_LED, LOW);
     hwReboot();
   }
 }
@@ -285,7 +272,6 @@ void presentation() {
 
   present(1, S_LIGHT);
   present(2, S_LIGHT);
-  present(3, S_LIGHT);
 }
 
 void setup() {
@@ -311,22 +297,23 @@ long readVcc() {
   return result; // Vcc in millivolts
 }
 
-static uint8_t prevAlarmInterruptPin0 = ALARM_INTERUPT_PIN0_OFF; 
-static uint8_t prevAlarmInterruptPin1 = ALARM_INTERUPT_PIN1_OFF;
+static uint8_t prevAlarmInterruptPin = ALARM_INTERUPT_PIN_OFF; 
 static uint8_t prevSensorPin = 0;
-static uint8_t AlarmInterruptPin0,AlarmInterruptPin1,sensorPin; 
+static uint8_t AlarmInterruptPin,AlarmInterruptPin1,sensorPin; 
+
+#define MESSAGE_LENGTH 30
+char msg[MESSAGE_LENGTH];
+
 
 void loop(){ 
-  char msg[30];
+  
 
-  //
   if (!isClearEepromViaRstFlagErased){
     if (millis() > 5000){
       eraseClearEepromViaRstFlag();
       isClearEepromViaRstFlagErased = true;
     }
   }
-  
   
  //   Serial.print("flagPcint: ");
  //   Serial.println(flagPcint);
@@ -337,20 +324,20 @@ void loop(){
 
     //AlarmInterruptPin1 = debouncerALARM_INTERUPT_PIN1.read();
     //Serial.print("A0: ");
-    //Serial.println(digitalRead(ALARM_INTERUPT_PIN0));
+    //Serial.println(digitalRead(ALARM_INTERUPT_PIN));
     wait(50);
-    AlarmInterruptPin0 = digitalRead(ALARM_INTERUPT_PIN0);
-    if (AlarmInterruptPin0 != prevAlarmInterruptPin0){
-      sprintf(msg,"%s;%i",SHA204serial,(AlarmInterruptPin0 == ALARM_INTERUPT_PIN0_ON)?1:0);
-      msgAlarm0State.setDestination(0);
-      send(msgAlarm0State.set(msg), true);
+    AlarmInterruptPin = digitalRead(ALARM_INTERUPT_PIN);
+    if (AlarmInterruptPin != prevAlarmInterruptPin){
+      sprintf(msg,"%i;%s",(AlarmInterruptPin == ALARM_INTERUPT_PIN_ON)?1:0,SHA204serial);
+      msgAlarmState.setDestination(0);
+      send(msgAlarmState.set(msg), true);
       wait(100); 
-      prevAlarmInterruptPin0 = AlarmInterruptPin0;
+      prevAlarmInterruptPin = AlarmInterruptPin;
     }
   } else if (isClearEepromViaRstFlagErased)  {
     sensorPin = digitalRead(SENSOR_INTERUPT_PIN); 
 //    if (prevSensorPin != sensorPin){
-      sprintf(msg,"%s;%i",SHA204serial,sensorPin);
+      sprintf(msg,"%i;%s",sensorPin,SHA204serial); //\/0
       msgSensorState.setDestination(0);
       send(msgSensorState.set(msg), true);
       wait(100);  
@@ -373,46 +360,3 @@ void loop(){
       sleep(SENSOR_INTERUPT_PIN - 2, CHANGE, 0); //FALLING
     }
 }
-
-/*
-  if (prevAlarmInterruptPin0 != AlarmInterruptPin0){
-      prevAlarmInterruptPin0 = AlarmInterruptPin0; 
-      sprintf(msg,"%s*%i",SHA204serial,
-        (AlarmInterruptPin0 == ALARM_INTERUPT_PIN0_ON ? 1 : 0));
-      msgAlarm0State.setDestination(0);
-      send(msgAlarm0State.set(msg), true);
-      wait(100);  
-  } 
-
-  
-  
-  if ((prevAlarmInterruptPin0 == ALARM_INTERUPT_PIN0_OFF) && (AlarmInterruptPin0 == ALARM_INTERUPT_PIN0_ON)) {
-      prevAlarmInterruptPin0 = ALARM_INTERUPT_PIN0_ON; 
-      sprintf(msg,"%s*%i",SHA204serial,1);
-      msgAlarm0State.setDestination(0);
-      send(msgAlarm0State.set(msg), true);
-      //wait(100);    
-    } else if ((prevAlarmInterruptPin0 == ALARM_INTERUPT_PIN0_ON) && (AlarmInterruptPin0 == ALARM_INTERUPT_PIN0_OFF)){
-      prevAlarmInterruptPin0 = ALARM_INTERUPT_PIN0_OFF; 
-      sprintf(msg,"%s*%i",SHA204serial,0);
-      msgAlarm0State.setDestination(0);
-      send(msgAlarm0State.set(msg), true);
-      //wait(100);    
-    }
-
-  if ((prevAlarmInterruptPin1 == ALARM_INTERUPT_PIN1_OFF) && (AlarmInterruptPin1 == ALARM_INTERUPT_PIN1_ON)) {
-      prevAlarmInterruptPin1 = ALARM_INTERUPT_PIN1_ON; 
-      sprintf(msg,"%s*%i",SHA204serial,1);
-      msgAlarm1State.setDestination(0);
-      send(msgAlarm1State.set(msg), true);
-      //wait(100);    
-    } else if ((prevAlarmInterruptPin1 == ALARM_INTERUPT_PIN1_ON) && (AlarmInterruptPin1 == ALARM_INTERUPT_PIN1_OFF)){
-      prevAlarmInterruptPin1 = ALARM_INTERUPT_PIN1_OFF; 
-      sprintf(msg,"%s*%i",SHA204serial,0);
-      msgAlarm1State.setDestination(0);
-      send(msgAlarm1State.set(msg), true);
-      //wait(100);    
-    }
-
-  }
- */
