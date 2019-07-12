@@ -52,10 +52,7 @@ int relayNodeID = 0x0; // Is the recepient address
 #define MY_PARENT_NODE_ID 0
 
 
-// Enable and select radio type attached
 
-//#define MY_RADIO_NRF24
-//#define MY_RF24_IRQ_PIN 2
 
 #define MY_RADIO_RFM69
 
@@ -64,12 +61,7 @@ int relayNodeID = 0x0; // Is the recepient address
 //#define MY_RFM69_FREQUENCY   RF69_868MHZ
 #define MY_RFM69_FREQUENCY   RFM69_915MHZ
 
-
-//#define MY_RFM69_NEW_DRIVER
-
-// Enable Crypto Authentication to secure the node
-//#define MY_SIGNING_ATSHA204
-//#define  MY_SIGNING_REQUEST_SIGNATURES
+#define MY_RFM69_TX_POWER_DBM (13)
 
 #include <MySensors.h>
 
@@ -156,6 +148,7 @@ ISR (PCINT1_vect)
 //-----------------------------------
 #define CLEAR_EEPROM_VIA_RST_OFFSET 10
 bool isClearEepromViaRstFlagErased = false;
+bool isClearEepromNeeded = false;
 void eraseClearEepromViaRstFlag(){
   if (!isClearEepromViaRstFlagErased){
     Serial.println("eraseClearEepromViaRstFlag");
@@ -166,11 +159,12 @@ void eraseClearEepromViaRstFlag(){
 
 bool checkClearEeppromViaRstFlag(){
   //check rst source
-  //if (!(MCUSR & EXTRF)){
-  //  return false;
+  //if (bitRead(MCUSR, EXTRF) != 1){
+  // return false;
   //}
   uint8_t flagStatus = hwReadConfig(EEPROM_LOCAL_CONFIG_ADDRESS + CLEAR_EEPROM_VIA_RST_OFFSET);\
   if (flagStatus == 2) {
+    hwWriteConfig(EEPROM_LOCAL_CONFIG_ADDRESS + CLEAR_EEPROM_VIA_RST_OFFSET, 0);
     return true; //affecting eeprom clear
   }
   if (flagStatus == 1){
@@ -220,17 +214,10 @@ void before()
 
   AlarmIntEnable();
 
-  bool clearEeprom = checkClearEeppromViaRstFlag();
-  if (clearEeprom){
-    //EEPROM CLEAR HERE
-    eraseClearEepromViaRstFlag();
-    digitalWrite(GREEN_LED, HIGH);
-    digitalWrite(RED_LED, HIGH);
-    hwWriteConfig(EEPROM_NODE_ID_ADDRESS, 255);
-    Serial.println("NODE ID IS CLEARED");
-    wait(1000);
-    hwReboot();
-  }
+  isClearEepromNeeded = checkClearEeppromViaRstFlag();
+  
+  //Serial.print("MCUSR");
+  //Serial.println(MCUSR, HEX);
 }
 
 
@@ -270,8 +257,11 @@ void presentation() {
   // If S_LIGHT is used, remember to update variable type you send in. See "msg" above.
 
   present(1, S_LIGHT);
+  wait(100);
   present(2, S_LIGHT); 
+  wait(100);
   present(222, S_LIGHT);
+  wait(100);
 }
 
 void setup() {
@@ -310,21 +300,22 @@ void loop(){
 
   if (!isClearEepromViaRstFlagErased){
     if (millis() > 5000){
+      if (isClearEepromNeeded){
+        //EEPROM CLEAR HERE
+        digitalWrite(GREEN_LED, HIGH);
+        digitalWrite(RED_LED, HIGH);
+        hwWriteConfig(EEPROM_NODE_ID_ADDRESS, 255);
+        Serial.println("NODE ID IS CLEARED");
+        wait(1000);
+        hwReboot();
+      }
       eraseClearEepromViaRstFlag();
       isClearEepromViaRstFlagErased = true;
     }
   }
-  
- //   Serial.print("flagPcint: ");
- //   Serial.println(flagPcint);
-
  
   if ((flagPcint == 1) && isClearEepromViaRstFlagErased) {
     flagPcint = 0;
-
-    //AlarmInterruptPin1 = debouncerALARM_INTERUPT_PIN1.read();
-    //Serial.print("A0: ");
-    //Serial.println(digitalRead(ALARM_INTERUPT_PIN));
     wait(50);
     AlarmInterruptPin = digitalRead(ALARM_INTERUPT_PIN);
     if (AlarmInterruptPin != prevAlarmInterruptPin){
@@ -335,7 +326,7 @@ void loop(){
       prevAlarmInterruptPin = AlarmInterruptPin;
     }
   } else if (isClearEepromViaRstFlagErased)  {
-    sensorPin = digitalRead(SENSOR_INTERUPT_PIN); 
+      sensorPin = digitalRead(SENSOR_INTERUPT_PIN); 
 //    if (prevSensorPin != sensorPin){
       sprintf(msg,"%i;%s",sensorPin,SHA204serial); //\/0
       msgSensorState.setDestination(0);
@@ -351,7 +342,7 @@ void loop(){
    *  2.4V - lowest level, 3v - max level
    */
   int sensorValue = readVcc();
-  int batteryPcnt = 100 * (sensorValue - 2400) / 600;
+  int batteryPcnt = 100 * (sensorValue - 2100)/(3000-2100); 
 
   
   batteryPcnt = batteryPcnt > 0 ? batteryPcnt:0; // Cut down negative values. Just in case the battery goes below 4V and the node still working. 
@@ -359,6 +350,7 @@ void loop(){
 
   if (oldBatteryPcnt != batteryPcnt ) {
     sprintf(msg,"%i;%s",batteryPcnt,SHA204serial);
+    //sprintf(msg,"%i;%s",sensorValue,SHA204serial);
     //sendBatteryLevel(msg);
     msgSensorState.setDestination(0);
     send(msgBatteryLevel.set(msg), true);
@@ -372,4 +364,4 @@ void loop(){
     if (isClearEepromViaRstFlagErased && (sensorPin == digitalRead(SENSOR_INTERUPT_PIN)) && flagPcint == 0) {
       sleep(SENSOR_INTERUPT_PIN - 2, CHANGE, 0); //FALLING
     }
-}
+} 
