@@ -27,8 +27,8 @@
 
 
 // Enable debug prints to serial monitor
-#define MY_DEBUG
-#define MY_DEBUG_VERBOSE_RFM69
+//#define MY_DEBUG
+//#define MY_DEBUG_VERBOSE_RFM69
 
 // The switch Node ID
 //#define MY_NODE_ID 0x43
@@ -44,12 +44,14 @@
  * Button 3 have no attached sensorsors and will not be "presented" since there is NULL value.
  * NULL value indicates no switch attached to the corresponding JST connector
 */
-int relayNodeID = 0x0; // Is the recepient address
+//int relayNodeID = 0x0; // Is the recepient address
 
 // Avoid battery drain if Gateway disconnected and the node sends more than MY_TRANSPORT_STATE_RETRIES times message.
 #define MY_TRANSPORT_UPLINK_CHECK_DISABLED
 #define MY_PARENT_NODE_IS_STATIC
 #define MY_PARENT_NODE_ID 0
+#define MY_TRANSPORT_WAIT_READY_MS 10000
+#define MY_SLEEP_TRANSPORT_RECONNECT_TIMEOUT_MS 0
 
 
 
@@ -105,6 +107,7 @@ void stringFromHexBuffer(uint8_t* data, size_t sz)
     sprintf(&SHA204serial[i*2],"%02x",data[i]);
   }
   SHA204serial[18] = '\0';
+  Serial.println(SHA204serial);
 }
 
 static bool get_atsha204a_serial()
@@ -151,7 +154,7 @@ bool isClearEepromViaRstFlagErased = false;
 bool isClearEepromNeeded = false;
 void eraseClearEepromViaRstFlag(){
   if (!isClearEepromViaRstFlagErased){
-    Serial.println("eraseClearEepromViaRstFlag");
+    //Serial.println("eraseClearEepromViaRstFlag");
     hwWriteConfig(EEPROM_LOCAL_CONFIG_ADDRESS + CLEAR_EEPROM_VIA_RST_OFFSET,0xFF);
     isClearEepromViaRstFlagErased = true;
   }
@@ -206,7 +209,7 @@ void before()
       Serial.println(F("FAILED to get sha204 serial number!"));
      }
   stringFromHexBuffer(rx_buffer,9);
-  Serial.print("SHA204serial: "); Serial.println(SHA204serial);
+  //Serial.print("SHA204serial: "); Serial.println(SHA204serial);
 
   // Setup the pins
   pinMode(ALARM_INTERUPT_PIN, INPUT);
@@ -215,6 +218,20 @@ void before()
   AlarmIntEnable();
 
   isClearEepromNeeded = checkClearEeppromViaRstFlag();
+  if (isClearEepromNeeded){
+    while (true){
+      if (millis() > 2000){
+       //EEPROM CLEAR HERE
+       digitalWrite(GREEN_LED, HIGH);
+       digitalWrite(RED_LED, HIGH);
+       hwWriteConfig(EEPROM_NODE_ID_ADDRESS, 255);
+       Serial.println("NODE ID IS CLEARED");
+       wait(1000);
+       hwReboot();  
+      }
+    }
+     
+  }
   
   //Serial.print("MCUSR");
   //Serial.println(MCUSR, HEX);
@@ -256,12 +273,12 @@ void presentation() {
   // You can use S_DOOR, S_MOTION or S_LIGHT here depending on your usage.
   // If S_LIGHT is used, remember to update variable type you send in. See "msg" above.
 
-  present(1, S_LIGHT);
-  wait(100);
-  present(2, S_LIGHT); 
-  wait(100);
-  present(222, S_LIGHT);
-  wait(100);
+  //present(1, S_LIGHT);
+  //wait(100);
+  //present(2, S_LIGHT); 
+  //wait(100);
+  //present(222, S_LIGHT);
+  //wait(100);
 }
 
 void setup() {
@@ -296,24 +313,21 @@ char msg[MESSAGE_LENGTH];
 
 
 void loop(){ 
-  
-
+  //Serial.println("Looooop");
+  //    no node id assigned while initial setup
+  if (hwReadConfig(EEPROM_NODE_ID_ADDRESS) == 0xFF ){
+   // Serial.println("sleep(SENSOR_INTERUPT_PIN - 2, CHANGE, 900000); ");
+    sleep(SENSOR_INTERUPT_PIN - 2, CHANGE, 0xFFFFFFF); //FALLING
+  }
+    
   if (!isClearEepromViaRstFlagErased){
     if (millis() > 5000){
-      if (isClearEepromNeeded){
-        //EEPROM CLEAR HERE
-        digitalWrite(GREEN_LED, HIGH);
-        digitalWrite(RED_LED, HIGH);
-        hwWriteConfig(EEPROM_NODE_ID_ADDRESS, 255);
-        Serial.println("NODE ID IS CLEARED");
-        wait(1000);
-        hwReboot();
-      }
       eraseClearEepromViaRstFlag();
       isClearEepromViaRstFlagErased = true;
     }
   }
- 
+
+
   if ((flagPcint == 1) && isClearEepromViaRstFlagErased) {
     flagPcint = 0;
     wait(50);
@@ -359,7 +373,7 @@ void loop(){
   }
 
   if (millis() > 6000){
-  batteryPcnt > 10 ? blinkGreenSensorLed(): blinkRedSensorLed(); 
+    batteryPcnt > 15 ? blinkGreenSensorLed(): blinkRedSensorLed(); 
   }
     if (isClearEepromViaRstFlagErased && (sensorPin == digitalRead(SENSOR_INTERUPT_PIN)) && flagPcint == 0) {
       sleep(SENSOR_INTERUPT_PIN - 2, CHANGE, 0); //FALLING
